@@ -9,41 +9,150 @@ Rules for every function:
 - Precision is 0.0 when nothing is flagged; recall is 0.0 when there are no positives.
 """
 from __future__ import annotations
-
+import math
 
 def confusion_at(y_true, scores, threshold: float) -> dict:
     """Return {"tp": int, "fp": int, "tn": int, "fn": int} at `threshold`."""
-    raise NotImplementedError
+    
+    if len(y_true) != len(scores):
+        raise ValueError("y_true and scores must have the same length")
+
+    if len(y_true) == 0:
+        raise ValueError("Inputs must not be empty")
+
+    if any(y not in (0, 1) for y in y_true):
+        raise ValueError("Labels must be 0 or 1")
+
+    if any(score != score for score in scores):
+        raise ValueError("Scores must not contain NaN")
+
+    tp = fp = tn = fn = 0
+
+    for actual, score in zip(y_true, scores):
+        flagged = score >= threshold
+
+        if actual == 1 and flagged:
+            tp += 1
+        elif actual == 0 and flagged:
+            fp += 1
+        elif actual == 0 and not flagged:
+            tn += 1
+        else:
+            fn += 1
+
+    return {"tp": tp, "fp": fp, "tn": tn, "fn": fn}
+
 
 
 def precision_recall_at(y_true, scores, threshold: float) -> tuple[float, float]:
     """Return (precision, recall) at `threshold`."""
-    raise NotImplementedError
+
+    counts = confusion_at(y_true, scores, threshold)
+
+    tp = counts["tp"]
+    fp = counts["fp"]
+    fn = counts["fn"]
+
+    precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+    recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+
+    return precision, recall
+
 
 
 def precision_at_k(y_true, scores, k: int) -> float:
-    """Share of positives among the k highest scores.
+    """Share of positives among the k highest scores."""
 
-    ValueError if k <= 0; if k > n, use n. Rank by score descending; ties keep their
-    original order.
-    """
-    raise NotImplementedError
+    if len(y_true) != len(scores):
+        raise ValueError("y_true and scores must have the same length")
+
+    if len(y_true) == 0:
+        raise ValueError("Inputs must not be empty")
+
+    if any(y not in (0, 1) for y in y_true):
+        raise ValueError("Labels must be 0 or 1")
+
+    if any(score != score for score in scores):
+        raise ValueError("Scores must not contain NaN")
+
+    if k <= 0:
+        raise ValueError("k must be positive")
+
+    k = min(k, len(y_true))
+
+    ranked_indices = sorted(
+        range(len(scores)),
+        key=lambda i: scores[i],
+        reverse=True,
+    )
+
+    top_indices = ranked_indices[:k]
+    positives = sum(y_true[i] == 1 for i in top_indices)
+
+    return positives / k
+
+
 
 
 def expected_cost(y_true, scores, threshold: float, *, cost_fp: float, cost_fn: float) -> float:
     """fp * cost_fp + fn * cost_fn at `threshold`."""
-    raise NotImplementedError
+
+    counts = confusion_at(y_true, scores, threshold)
+
+    return counts["fp"] * cost_fp + counts["fn"] * cost_fn
+
 
 
 def best_threshold(y_true, scores, *, cost_fp: float, cost_fn: float) -> float:
     """Threshold with the lowest expected cost.
 
-    Candidates are every distinct score plus math.inf ("flag nothing"). On a tie in cost,
-    return the highest threshold (fewer flags for the same cost).
+    On a tie in cost, return the highest threshold.
     """
-    raise NotImplementedError
+
+    if len(y_true) != len(scores):
+        raise ValueError("y_true and scores must have the same length")
+    if len(y_true) == 0:
+        raise ValueError("Inputs must not be empty")
+    if any(y not in (0, 1) for y in y_true):
+        raise ValueError("Labels must be 0 or 1")
+    if any(score != score for score in scores):
+        raise ValueError("Scores must not contain NaN")
+
+    candidates = sorted(set(scores)) + [math.inf]
+
+    return min(
+        candidates,
+        key=lambda t: (
+            expected_cost(y_true, scores, t, cost_fp=cost_fp, cost_fn=cost_fn),
+            -t,
+        ),
+    )
+
+
 
 
 def threshold_for_precision(y_true, scores, min_precision: float) -> float | None:
     """Lowest distinct score whose precision is >= min_precision, or None if none reaches it."""
-    raise NotImplementedError
+
+    if len(y_true) != len(scores):
+        raise ValueError("y_true and scores must have the same length")
+
+    if len(y_true) == 0:
+        raise ValueError("Inputs must not be empty")
+
+    if any(y not in (0, 1) for y in y_true):
+        raise ValueError("Labels must be 0 or 1")
+
+    if any(score != score for score in scores):
+        raise ValueError("Scores must not contain NaN")
+
+    candidates = sorted(set(scores))
+
+    for threshold in candidates:
+        precision, recall = precision_recall_at(y_true, scores, threshold)
+
+        if precision >= min_precision:
+            return threshold
+
+    return None
+
